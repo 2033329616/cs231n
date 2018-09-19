@@ -72,7 +72,7 @@ class KNearestNeighbor(object):
         # training point, and store the result in dists[i, j]. You should   #
         # not use a loop over dimension.                                    #
         #####################################################################
-        dists[i,j] = np.sum(np.square(X[i,:] - self.X_train[j,:]))
+        dists[i,j] = np.sqrt(np.sum(np.square(X[i,:] - self.X_train[j,:])))
         #####################################################################
         #                       END OF YOUR CODE                            #
         #####################################################################
@@ -94,7 +94,16 @@ class KNearestNeighbor(object):
       # Compute the l2 distance between the ith test point and all training #
       # points, and store the result in dists[i, :].                        #
       #######################################################################
-      pass
+      # Nx3072 -> Nx1 -> 1xN
+      # ---------------------------- 方法一 ----------------------------------
+      # 使用向量运算，再使用平方与求和运算
+      # 可以不使用X[i:i+1,:]把数据变为(1,3072)，直接使用X[i] (3072,)就行
+      # dists[i:i+1,:] = np.sqrt(np.sum(np.square(X[i:i+1,:] - self.X_train), axis=1).transpose()) 
+      dists[i] = np.sqrt(np.sum((X[i] - self.X_train)**2, axis=1))
+      # ---------------------------- 方法二 ----------------------------------
+      # 直接使用向量运算，但有计算浪费，不推荐使用
+      # X_reduce = X[i:i+1,:] - self.X_train                      # get Nx3072
+      # dists[i] = X_reduce.dot(X_reduce.transpose()).diagonal()  # (N, N)->(N,) 但有运算浪费，因为只取对角线元素
       #######################################################################
       #                         END OF YOUR CODE                            #
       #######################################################################
@@ -122,7 +131,15 @@ class KNearestNeighbor(object):
     # HINT: Try to formulate the l2 distance using matrix multiplication    #
     #       and two broadcast sums.                                         #
     #########################################################################
-    pass
+    # split (p-q)^2 to p^2 + q^2 - 2pq
+    sum_test = np.sum(X**2, axis=1, keepdims=True)                # get (Nte, 1)
+    # print(sum_test.shape)
+    sum_train = np.sum(self.X_train**2, axis=1).reshape(1, -1)    # get (1, Ntr)
+    # print(sum_train.shape)
+    sum_tetr = 2 * X.dot(self.X_train.transpose())                # get (Nte, Ntr)
+    # print(sum_tetr.shape)
+    dists = np.sqrt(sum_test + sum_train - sum_tetr)              # get (Nte, Ntr)
+
     #########################################################################
     #                         END OF YOUR CODE                              #
     #########################################################################
@@ -165,7 +182,7 @@ class KNearestNeighbor(object):
       #########################################################################
       # ---------------------------- 方法一 -------------------------------
       # 使用Counter统计各个类的投票结果，得到的结果为字典，
-      count = Counter(closest_y)           # 计算各类别出现的频率  例如得：{1: 4, 4: 3, 2: 1, ...}
+      count = Counter(closest_y)              # 计算各类别出现的频率  例如得：{1: 4, 4: 3, 2: 1, ...}
       y_pred[i] = count.most_common(1)[0][0]  # most_common得[(4, 8)]，所以加[0][0]
       # ---------------------------- 方法二 -------------------------------
       # 使用numpy bincount统计各个数据出现次数，使用argmax得到最大值
