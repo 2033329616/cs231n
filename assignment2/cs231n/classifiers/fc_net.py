@@ -293,10 +293,10 @@ class FullyConnectedNet(object):
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
         loss, softmax_grads = softmax_loss(scores, y)               # 获取softmax的输出,数据损失和梯度
-        regular_loss = 0
         # 先将第L层反向传播，因为该层无激活函数
         upstream_grads, grads['W%d'%L], grads['b%d'%L] = affine_backward(softmax_grads, cache['h%d_cache'% (L)])
-        grads['W%d'%L] += 0.5*self.reg * self.params['W%d'%L]           # 累加正则化部分
+        grads['W%d'%L] += self.reg * self.params['W%d'%L]                # 累加正则化部分
+        regular_loss = np.sum(self.params['W%d'%L]*self.params['W%d'%L]) # 正则化损失
 
         for num in list(range(L-1))[::-1]:                          # 反向传播前L-1层，倒序访问网络
             W = 'W%d'% (num+1)
