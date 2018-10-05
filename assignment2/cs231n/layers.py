@@ -158,7 +158,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     momentum = bn_param.get('momentum', 0.9)
 
     N, D = x.shape
-    running_mean = bn_param.get('running_mean', np.zeros(D, dtype=x.dtype))
+    running_mean = bn_param.get('running_mean', np.zeros(D, dtype=x.dtype))   # 没有该属性取0
     running_var = bn_param.get('running_var', np.zeros(D, dtype=x.dtype))
 
     out, cache = None, None
@@ -184,7 +184,17 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # Referencing the original paper (https://arxiv.org/abs/1502.03167)   #
         # might prove to be helpful.                                          #
         #######################################################################
-        pass
+        sample_mean = np.mean(x, axis=0)   # 把每列求平均 get (D, )
+        sample_var = np.var(x, axis=0)     # 每列求方差 get   (D, )
+        den = np.sqrt(sample_var + eps)
+        x_norm = (x - sample_mean) / den   # 归一化得到0均值，1方差的分布 (N, D)
+        out = x_norm * gamma + beta        # 进行缩放和平移
+        # cache = gamma * den              # 输出对输入求导只保留系数
+        cache = (gamma, sample_mean, sample_var, eps, x, x_norm) 
+
+        # 保存均值和方差用于测试阶段
+        running_mean = momentum * running_mean + (1-momentum)* sample_mean
+        running_var = momentum * running_var + (1-momentum)* sample_var
         #######################################################################
         #                           END OF YOUR CODE                          #
         #######################################################################
@@ -195,7 +205,8 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # then scale and shift the normalized data using gamma and beta.      #
         # Store the result in the out variable.                               #
         #######################################################################
-        pass
+        x_norm_test = (x - running_mean) / np.sqrt(running_var + eps)   # 使用训练阶段的mean和var归一化
+        out = gamma * x_norm_test + beta                                # 缩放和平移
         #######################################################################
         #                          END OF YOUR CODE                           #
         #######################################################################
@@ -233,7 +244,42 @@ def batchnorm_backward(dout, cache):
     # Referencing the original paper (https://arxiv.org/abs/1502.03167)       #
     # might prove to be helpful.                                              #
     ###########################################################################
-    pass
+    gamma, sample_mean, sample_var, eps, x, x_norm = cache
+    dgamma = np.sum(dout * x_norm, axis=0)    # (D, )   # gamma是常数，所以将样本个数维度叠加
+    dbeta  = np.sum(dout, axis=0)             # (D, )
+    # 均值和方差中也有x，所以也是x的函数
+    m, D = x.shape 
+
+    # 方法一、 使用计算图表示算式后，按不同的节点求导 m与N一致  (部分中间节点)
+    # dl_xnorm = dout * gamma
+    # dx_mu_1 = dl_xnorm / np.sqrt(sample_var+eps)                     #  (N,D)
+    # dl_var = 2/m*(x-sample_mean) * np.sum(-1/2 *dl_xnorm*(x-sample_mean)* (sample_var+eps)**(-3/2), axis=0)  # (D,  )
+    # dx_mu_2 = dl_var
+    # dx_mu = dx_mu_1 + dx_mu_2                                        # (N, D)
+    # dx_1 = -1/m * np.sum(dx_mu, axis=0)                              # (D, )
+    # dx_2 = dx_mu
+    # dx = dx_1 + dx_2
+
+    # 全部中间节点
+    dl_xhat = dout * gamma                                             # (N, D)
+    dl_mu1 = dl_xhat / np.sqrt(sample_var+eps)                         # 对分子上均值的偏导 (N, D)
+    dl_den = np.sum(-dl_xhat *(x-sample_mean) / (sample_var+eps), axis=0)       # 对分母求偏导 (D, )
+    dl_var = 1/2 * dl_den / np.sqrt(sample_var+eps)                    # 对方差求偏导 (D, )
+    dl_mu_squ = np.tile(dl_var, (m, 1)) / m                 # 对均值的平方求导 (N, D) 梯度分别分配到m维度
+    dl_mu2 = dl_mu_squ * 2*(x-sample_mean)                             # 对分母上均值的偏导 (N, D)
+    dl_x_mu = dl_mu1 + dl_mu2                                          # 将x-mu的梯度累加  (N, D)
+    dl_mu = -np.sum(dl_x_mu, axis=0)                            	   # 对mu的梯度        (D, )
+    # dl_x1 = np.tile(dl_mu, (m, 1)) / m                               # 对x的部分梯度      (N, D)
+    dl_x1 = np.ones((m, D)) * dl_mu / m                                # 与上一句功能一样
+    dl_x2 = dl_x_mu                                                    # 对x的另一部分梯度  (N, D)
+    dx = dl_x1 + dl_x2                                                 # 对x的梯度         (N, D)
+
+    # 方法二、按求导公式
+    # https://blog.csdn.net/zhangxb35/article/details/69568456
+    # dl_xhat = dout * gamma
+    # dl_var = np.sum(-1/2 * dl_xhat * (x-sample_mean) * (sample_var+eps)**(-3/2), axis=0)
+    # dl_mean = np.sum(-dl_xhat / np.sqrt(sample_var+eps), axis=0) + dl_var * -2/m * np.sum(x-sample_mean, axis=0)
+    # dx = dl_xhat/np.sqrt(sample_var+eps) + 2/m * dl_var*(x-sample_mean) + dl_mean / m
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -264,7 +310,18 @@ def batchnorm_backward_alt(dout, cache):
     # should be able to compute gradients with respect to the inputs in a     #
     # single statement; our implementation fits on a single 80-character line.#
     ###########################################################################
-    pass
+    gamma, sample_mean, sample_var, eps, x, x_norm = cache
+    dgamma = np.sum(dout * x_norm, axis=0)    # (D, )   # gamma是常数，所以将样本个数维度叠加
+    dbeta  = np.sum(dout, axis=0)             # (D, )
+    # 均值和方差中也有x，所以也是x的函数
+    m = x.shape[0]
+
+    # 方法二、按求导公式
+    # https://blog.csdn.net/zhangxb35/article/details/69568456
+    dl_xhat = dout * gamma
+    dl_var = np.sum(-1/2 * dl_xhat * (x-sample_mean) * (sample_var+eps)**(-3/2), axis=0)
+    dl_mean = np.sum(-dl_xhat / np.sqrt(sample_var+eps), axis=0) + dl_var * -2/m * np.sum(x-sample_mean, axis=0)
+    dx = dl_xhat/np.sqrt(sample_var+eps) + 2/m * dl_var*(x-sample_mean) + dl_mean / m
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -306,7 +363,18 @@ def layernorm_forward(x, gamma, beta, ln_param):
     # transformations you could perform, that would enable you to copy over   #
     # the batch norm code and leave it almost unchanged?                      #
     ###########################################################################
-    pass
+    x = x.T                            # (D, N) 将x转置复用BN的程序
+    sample_mean = np.mean(x, axis=0)   # 把每列求平均 get (N, )
+    sample_var = np.var(x, axis=0)     # 每列求方差 get   (N, )
+    den = np.sqrt(sample_var + eps)
+    x_norm = (x - sample_mean) / den                            # 归一化得到0均值，1方差的分布 (D, N)
+    out = x_norm * gamma.reshape(-1,1) + beta.reshape(-1,1)     # 进行缩放和平移
+    out = out.T                                                 # 将输出的维度与输入的数据对应 (N, D)
+    # cache = gamma * den                                       # 输出对输入求导只保留系数
+    x = x.T                                                     # 将数据维度还原 (N, D)
+    x_norm = x_norm.T
+    cache = (gamma, sample_mean, sample_var, eps, x, x_norm) 
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -337,7 +405,23 @@ def layernorm_backward(dout, cache):
     # implementation of batch normalization. The hints to the forward pass    #
     # still apply!                                                            #
     ###########################################################################
-    pass
+
+    gamma, sample_mean, sample_var, eps, x, x_norm = cache
+    gamma = gamma.reshape(-1,1)
+    dgamma = np.sum(dout * x_norm, axis=0)    # (D, )   # gamma是常数，所以将样本个数维度叠加
+    dbeta  = np.sum(dout, axis=0)             # (D, )
+
+    dout = dout.T                                       # !!!转置一下复用上述的BN程序!!!
+    x = x.T                                             # (D, N)
+    x_norm = x_norm.T    
+    # 均值和方差中也有x，所以也是x的函数
+    m, D = x.shape                                      # 这里的m表示维度，D表示样本个数
+
+    dl_xhat = dout * gamma
+    dl_var = np.sum(-1/2 * dl_xhat * (x-sample_mean) * (sample_var+eps)**(-3/2), axis=0)
+    dl_mean = np.sum(-dl_xhat / np.sqrt(sample_var+eps), axis=0) + dl_var * -2/m * np.sum(x-sample_mean, axis=0)
+    dx = dl_xhat/np.sqrt(sample_var+eps) + 2/m * dl_var*(x-sample_mean) + dl_mean / m    # (D, N)
+    dx = dx.T                                           # 转置还原维度(N, D)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################

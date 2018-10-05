@@ -38,7 +38,7 @@ def sgd(w, dw, config=None):
     - learning_rate: Scalar learning rate.
     """
     if config is None: config = {}
-    config.setdefault('learning_rate', 1e-2)
+    config.setdefault('learning_rate', 1e-2)   # 如果没有传入learning_rate，即无该键值，则设置1e-2为默认值
 
     w -= config['learning_rate'] * dw
     return w, config
@@ -58,14 +58,17 @@ def sgd_momentum(w, dw, config=None):
     if config is None: config = {}
     config.setdefault('learning_rate', 1e-2)
     config.setdefault('momentum', 0.9)
-    v = config.get('velocity', np.zeros_like(w))
+    v = config.get('velocity', np.zeros_like(w))  # 返回指定的velocity值，如果不存在则使用全0
 
     next_w = None
     ###########################################################################
     # TODO: Implement the momentum update formula. Store the updated value in #
     # the next_w variable. You should also use and update the velocity v.     #
     ###########################################################################
-    pass
+    old_v = v 
+    v = config['momentum'] * v - config['learning_rate'] * dw    # v的衰减 + 新梯度更新 => 新v
+    # next_w = w + v +  config['momentum'] * (v - old_v)         # 更新权重的值(Nesterov momentum)
+    next_w = w + v
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -99,7 +102,10 @@ def rmsprop(w, dw, config=None):
     # in the next_w variable. Don't forget to update cache value stored in    #
     # config['cache'].                                                        #
     ###########################################################################
-    pass
+    # 梯度平方衰减量 + 更新量
+    config['cache'] = config['decay_rate'] * config['cache'] + (1-config['decay_rate']) * dw * dw 
+    # 权重中的每个元素会进行缩放
+    next_w = w - config['learning_rate'] * dw / (np.sqrt(config['cache']) + config['epsilon'])
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -137,9 +143,24 @@ def adam(w, dw, config=None):
     # stored in config.                                                       #
     #                                                                         #
     # NOTE: In order to match the reference output, please modify t _before_  #
-    # using it in any calculations.                                           #
+    # using it in any calculations. 初值设置为1                                #
     ###########################################################################
-    pass
+    # 求梯度的滑动平均(moving average)
+    config['m'] = config['beta1'] * config['m'] + (1-config['beta1']) * dw
+    # 求梯度平方的滑动平均
+    config['v'] = config['beta2'] * config['v'] + (1-config['beta2']) * dw * dw
+    # 偏差矫正，防止开始步长过大
+    # 1 - beta1**t 中beta1为小于1的数，该指数函数的范围为[0,1)，但t初值设置为1，所以范围为(0,1)
+    # 开始小后面大，使用m除以该值可以将在m接近0时做一个放大，防止其过小，随着迭代次数增加，分母接近1
+    # 偏差矫正效果减弱，m值也很大(v同理)，不会出现开始是近0的数做除法的情况
+    config['t'] += 1        # 迭代次数更新!!!!，放到矫正之前
+    m_unbias = config['m'] / (1 - config['beta1']**config['t'])
+    v_unbias = config['v'] / (1 - config['beta2']**config['t'])
+    # 权重更新
+    next_w = w - config['learning_rate'] * m_unbias / (np.sqrt(v_unbias) + config['epsilon'])
+        
+    # config['m'] = m_unbias  # 该句取消!!! 不需要矫正，累加正常的m与v
+    # config['v'] = v_unbias
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################

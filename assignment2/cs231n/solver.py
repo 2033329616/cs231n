@@ -187,7 +187,7 @@ class Solver(object):
             dw = grads[p]
             config = self.optim_configs[p]
             next_w, next_config = self.update_rule(w, dw, config)   # 使用dw更新参数
-            self.model.params[p] = next_w                           # next_w这是干什么的???
+            self.model.params[p] = next_w                           # next_w保存更新后的权重
             self.optim_configs[p] = next_config
 
 
@@ -275,7 +275,7 @@ class Solver(object):
             epoch_end = (t + 1) % iterations_per_epoch == 0          # 为True表示一个epoch已经完成
             if epoch_end:
                 self.epoch += 1
-                for k in self.optim_configs:                         # ???参数设置
+                for k in self.optim_configs:                         # k为参数名称
                     self.optim_configs[k]['learning_rate'] *= self.lr_decay
 
             # Check train and val accuracy on the first iteration, the last

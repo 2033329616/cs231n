@@ -195,7 +195,15 @@ class FullyConnectedNet(object):
                 cols = hidden_dims[num]             # (H1, H2)
 
             self.params['W' + str(num+1)] = weight_scale * np.random.randn(rows, cols)   # (H1, H2)
-            self.params['b' + str(num+1)] = np.zeros(cols)                               # (H2)            
+            self.params['b' + str(num+1)] = np.zeros(cols)                               # (H2)  
+
+            # 初始化bn层
+            if (self.normalization == 'batchnorm') and (num != self.num_layers-1):     # 最后一层无BN
+                self.params['gamma%d'%(num+1)] = np.ones(hidden_dims[num])             # 与隐层单元数一致 
+                self.params['beta%d'%(num+1)] = np.zeros(hidden_dims[num]) 
+            if (self.normalization == 'layernorm') and (num != self.num_layers-1):     # 最后一层无LN
+                self.params['gamma%d'%(num+1)] = np.ones(hidden_dims[num])             # 与隐层单元数一致 
+                self.params['beta%d'%(num+1)] = np.zeros(hidden_dims[num])      
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -256,6 +264,7 @@ class FullyConnectedNet(object):
         ############################################################################
         cache = {}   # 来保存前向传播的值，用于之后的反向传播
         L = self.num_layers
+        layer_input = X
         for num in range(L-1):                                     # L-1层  
             W = self.params['W%d'% (num+1)]                        # 使用权重的名称来访问参数
             b = self.params['b%d'% (num+1)]
@@ -264,11 +273,22 @@ class FullyConnectedNet(object):
             # relu_out = 'relu%d_out'% (num+1)
             relu_cache = 'relu%d_cache'% (num+1)
 
-            h_out, cache[h_cache] = affine_forward(X, W, b)         # 全连接层前向传播
-            relu_out, cache[relu_cache] = relu_forward(h_out)       # 激活函数处理
-            X = relu_out                                            # 更新下次传入的数据
+            h_out, cache[h_cache] = affine_forward(layer_input, W, b)      # 全连接层前向传播
+            if self.normalization=='batchnorm':
+                bn_cache = 'bn%d_cache'%(num+1)
+                bn_out, cache[bn_cache] = batchnorm_forward(h_out, self.params['gamma%d'%(num+1)], 
+                                                            self.params['beta%d'%(num+1)], self.bn_params[num])
+                h_out = bn_out
+            if self.normalization=='layernorm':
+                ln_cache = 'ln%d_cache'%(num+1)
+                ln_out, cache[ln_cache] = layernorm_forward(h_out, self.params['gamma%d'%(num+1)], 
+                                                            self.params['beta%d'%(num+1)], self.bn_params[num])
+                h_out = ln_out
+
+            relu_out, cache[relu_cache] = relu_forward(h_out)              # 激活函数处理
+            layer_input = relu_out                                         # 更新下次传入的数据
         # 计算第L层的输出，无激活函数
-        h_out, cache['h%d_cache'% (L)] = affine_forward(X, self.params['W%d'% (L)], self.params['b%d'% (L)])
+        h_out, cache['h%d_cache'% (L)] = affine_forward(layer_input, self.params['W%d'% (L)], self.params['b%d'% (L)])
         scores = h_out
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -304,6 +324,18 @@ class FullyConnectedNet(object):
             regular_loss += np.sum(self.params[W]*self.params[W])   # 累积正则化损失
             # 反向传播ReLU层
             upstream_grads = relu_backward(upstream_grads, cache['relu%d_cache'% (num+1)])
+
+            # 反向传播BN层
+            if self.normalization=='batchnorm':
+                gamma = 'gamma%d'%(num+1)
+                beta = 'beta%d'%(num+1)
+                upstream_grads, grads[gamma], grads[beta]= batchnorm_backward_alt(upstream_grads, cache['bn%d_cache'%(num+1)])
+            # 反向传播LN层
+            if self.normalization=='layernorm':
+                gamma = 'gamma%d'%(num+1)
+                beta = 'beta%d'%(num+1)
+                upstream_grads, grads[gamma], grads[beta]= layernorm_backward(upstream_grads, cache['ln%d_cache'%(num+1)])
+
             # 反向传播全连接层
             upstream_grads, grads[W], grads[b] = affine_backward(upstream_grads, cache['h%d_cache'% (num+1)])
             grads[W] += self.reg * self.params[W]  # 累加正则化梯度部分
