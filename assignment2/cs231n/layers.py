@@ -265,10 +265,10 @@ def batchnorm_backward(dout, cache):
     dl_mu1 = dl_xhat / np.sqrt(sample_var+eps)                         # 对分子上均值的偏导 (N, D)
     dl_den = np.sum(-dl_xhat *(x-sample_mean) / (sample_var+eps), axis=0)       # 对分母求偏导 (D, )
     dl_var = 1/2 * dl_den / np.sqrt(sample_var+eps)                    # 对方差求偏导 (D, )
-    dl_mu_squ = np.tile(dl_var, (m, 1)) / m                 # 对均值的平方求导 (N, D) 梯度分别分配到m维度
+    dl_mu_squ = np.tile(dl_var, (m, 1)) / m                            # 对均值的平方求导 (N, D) 梯度分别分配到m维度
     dl_mu2 = dl_mu_squ * 2*(x-sample_mean)                             # 对分母上均值的偏导 (N, D)
     dl_x_mu = dl_mu1 + dl_mu2                                          # 将x-mu的梯度累加  (N, D)
-    dl_mu = -np.sum(dl_x_mu, axis=0)                            	   # 对mu的梯度        (D, )
+    dl_mu = -np.sum(dl_x_mu, axis=0)                                   # 对mu的梯度        (D, )
     # dl_x1 = np.tile(dl_mu, (m, 1)) / m                               # 对x的部分梯度      (N, D)
     dl_x1 = np.ones((m, D)) * dl_mu / m                                # 与上一句功能一样
     dl_x2 = dl_x_mu                                                    # 对x的另一部分梯度  (N, D)
@@ -439,7 +439,7 @@ def dropout_forward(x, dropout_param):
       - mode: 'test' or 'train'. If the mode is train, then perform dropout;
         if the mode is test, then just return the input.
       - seed: Seed for the random number generator. Passing seed makes this
-        function deterministic, which is needed for gradient checking but not
+        function deterministic, which is needed for gradient checking but not        
         in real networks.
 
     Outputs:
@@ -466,7 +466,9 @@ def dropout_forward(x, dropout_param):
         # TODO: Implement training phase forward pass for inverted dropout.   #
         # Store the dropout mask in the mask variable.                        #
         #######################################################################
-        pass
+        # 参数的*号代表把元组的元素取出来 (a,b) => a,b
+        mask = (np.random.rand(*x.shape) < p) / p    # p是输出激活的概率
+        out = x * mask
         #######################################################################
         #                           END OF YOUR CODE                          #
         #######################################################################
@@ -474,7 +476,7 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # TODO: Implement the test phase forward pass for inverted dropout.   #
         #######################################################################
-        pass
+        out = x                                     # 输出保持不变
         #######################################################################
         #                            END OF YOUR CODE                         #
         #######################################################################
@@ -501,7 +503,7 @@ def dropout_backward(dout, cache):
         #######################################################################
         # TODO: Implement training phase backward pass for inverted dropout   #
         #######################################################################
-        pass
+        dx = dout * mask
         #######################################################################
         #                          END OF YOUR CODE                           #
         #######################################################################

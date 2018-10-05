@@ -274,6 +274,7 @@ class FullyConnectedNet(object):
             relu_cache = 'relu%d_cache'% (num+1)
 
             h_out, cache[h_cache] = affine_forward(layer_input, W, b)      # 全连接层前向传播
+            # BN层前向传播
             if self.normalization=='batchnorm':
                 bn_cache = 'bn%d_cache'%(num+1)
                 bn_out, cache[bn_cache] = batchnorm_forward(h_out, self.params['gamma%d'%(num+1)], 
@@ -286,6 +287,13 @@ class FullyConnectedNet(object):
                 h_out = ln_out
 
             relu_out, cache[relu_cache] = relu_forward(h_out)              # 激活函数处理
+
+            # dropout输出
+            if self.use_dropout:
+                dropout = 'keep%d_cache'%(num+1)
+                drop_out, cache[dropout]= dropout_forward(relu_out, self.dropout_param)
+                relu_out = drop_out
+
             layer_input = relu_out                                         # 更新下次传入的数据
         # 计算第L层的输出，无激活函数
         h_out, cache['h%d_cache'% (L)] = affine_forward(layer_input, self.params['W%d'% (L)], self.params['b%d'% (L)])
@@ -322,6 +330,9 @@ class FullyConnectedNet(object):
             W = 'W%d'% (num+1)
             b = 'b%d'% (num+1)
             regular_loss += np.sum(self.params[W]*self.params[W])   # 累积正则化损失
+            # 反向传播Dropout层
+            if self.use_dropout:
+                upstream_grads = dropout_backward(upstream_grads, cache['keep%d_cache'%(num+1)])
             # 反向传播ReLU层
             upstream_grads = relu_backward(upstream_grads, cache['relu%d_cache'% (num+1)])
 
