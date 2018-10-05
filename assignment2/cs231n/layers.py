@@ -545,7 +545,26 @@ def conv_forward_naive(x, w, b, conv_param):
     # TODO: Implement the convolutional forward pass.                         #
     # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pass
+    N, C, H, W = x.shape                                       # 将数据的维度表示为变量
+    F, C, HH, WW = w.shape
+    stride = conv_param.get('stride', 1)                       # 获取步长，如果不存在则返回1
+    pad = conv_param.get('pad', 0)                             # 获取padding，如果不存在则返回0
+    # 如果需要进行padding操作,只对(N, C, H, W)的后两维度进行padding操作
+    if pad != 0:                                                         
+        x = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), 'constant', constant_values=0)
+    H_new = int((H + 2 * pad - HH) / stride + 1)                              # 计算卷积后的尺寸大小
+    W_new = int((W + 2 * pad - WW) / stride + 1)
+
+    # 卷积过程              
+    out = np.zeros((N, F, H_new, W_new))                                      # 创建输出维度的零矩阵
+    for num in range(N):
+        for filter in range(F):                                               # 卷积核数
+            for height in range(H_new):                                       # 新feature map的高
+                for width in range(W_new):                                    # 新feature map的宽
+                    start_h = stride * height
+                    start_w = stride * width 
+                    neural_prod = np.sum(x[num, :, start_h:start_h+HH, start_w:start_w+WW] * w[filter, :, :, :])
+                    out[num,filter,height, width] = neural_prod + b[filter]   # 切记加偏置
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -570,7 +589,33 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
-    pass
+    (x, w, b, conv_param) = cache
+    dx = np.zeros(x.shape)
+    dw = np.zeros(w.shape)
+    db = np.zeros(b.shape)
+    N, C, H, W = x.shape                                       # 将数据的维度表示为变量
+    F, C, HH, WW = w.shape
+    stride = conv_param.get('stride', 1)                       # 获取步长，如果不存在则返回1
+    pad = conv_param.get('pad', 0)                             # 获取padding，如果不存在则返回0
+    # 如果需要进行padding操作,只对(N, C, H, W)的后两维度进行padding操作
+    if pad != 0:                                                         
+        x = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), 'constant', constant_values=0)
+    H_new = int((H + 2 * pad - HH) / stride + 1)               # 计算卷积后的尺寸大小
+    W_new = int((W + 2 * pad - WW) / stride + 1)   
+
+    # dout (N,F,H,W) 维度
+    # mask = np.ones(*w)                                         # 定义一个与滤波器同维度的矩阵
+    for num in range(N):
+        for filter in range(F):                                               # 卷积核数
+            for height in range(H_new):                                       # 新feature map的高
+                for width in range(W_new):                                    # 新feature map的宽
+                    start_h = stride * height
+                    start_w = stride * width
+                    # (1,C,HH,WW)
+                    dx[num, :, start_h:start_h+HH, start_w:start_w+WW] += w[filter,:,:,:] * dout[num,filter,width,height]
+                    dw[filter,:,:,:] +=  dx[num, :, start_h:start_h+HH, start_w:start_w+WW] * dout[num,filter,width,height]
+                    db[filter] += dout[num,filter,width,height]
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
