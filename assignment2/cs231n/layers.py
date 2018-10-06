@@ -659,7 +659,7 @@ def max_pool_forward_naive(x, pool_param):
     N, C, H, W = x.shape
     pool_height, pool_width = pool_param['pool_height'], pool_param['pool_width']
     stride = pool_param['stride']
-    H_new = int((H - pool_height) / stride + 1)                  # 计算输出的尺寸
+    H_new = int((H - pool_height) / stride + 1)             # 计算输出的尺寸
     W_new = int((W - pool_width) / stride + 1)
 
     out = np.zeros((N, C, H_new, W_new))                    # 创建输出为0的矩阵
@@ -671,7 +671,7 @@ def max_pool_forward_naive(x, pool_param):
             # print('1',x_masked.shape)
             # print('2',out.shape)
             # print('----')
-            out[:, :, height, width] = np.max(x_masked, axis=(2,3))             # 在H与W维度中找最大值
+            out[:, :, height, width] = np.max(x_masked, axis=(2,3))                    # 在H与W维度中找最大值
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -698,7 +698,7 @@ def max_pool_backward_naive(dout, cache):
     N, C, H, W = x.shape
     pool_height, pool_width = pool_param['pool_height'], pool_param['pool_width']
     stride = pool_param['stride']
-    H_new = int((H - pool_height) / stride + 1)                  # 计算输出的尺寸
+    H_new = int((H - pool_height) / stride + 1)                    # 计算输出的尺寸
     W_new = int((W - pool_width) / stride + 1)
 
     #----------------------------------方法一---------------------------------------
@@ -776,7 +776,12 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     # vanilla version of batch normalization you implemented above.           #
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    # print(N, C, H, W)
+    out = np.zeros_like(x)                                      # 创建与x同维度的零矩阵
+    x_reshape = x.transpose(0,2,3,1).reshape(-1, C)             # (N, C, H, W) => (N,H,W,C)为了reshape使NHW在一块
+    vanilla_bn_out, cache = batchnorm_forward(x_reshape, gamma, beta, bn_param)
+    out= vanilla_bn_out.reshape(N, H, W, C).transpose(0,3,1,2)  # (N,H,W,C) => (N, C, H, W)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -806,11 +811,13 @@ def spatial_batchnorm_backward(dout, cache):
     # vanilla version of batch normalization you implemented above.           #
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
-    pass
+    N, C, H, W = dout.shape
+    dout_reshape = dout.transpose(0,2,3,1).reshape(-1, C)  # (N, C, H, W) => (N,H,W,C)为了reshape使NHW在一块    
+    dx_reshape, dgamma, dbeta = batchnorm_backward_alt(dout_reshape, cache)
+    dx = dx_reshape.reshape(N, H, W, C).transpose(0,3,1,2) # (-1,C) => (N, C, H, W)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
-
     return dx, dgamma, dbeta
 
 
@@ -842,7 +849,21 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     # the bulk of the code is similar to both train-time batch normalization  #
     # and layer normalization!                                                # 
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    group_len = C // G
+    x_reshape = x.transpose(0,2,3,1).reshape(-1, C)  # (N, C, H, W) => (N,H,W,C)为了reshape使NHW在一块
+    out = np.zeros_like(x)                           # (N, C,H,W)
+    cache = {'G':G, 'layernorm':[]}
+    for slice_g in range(G):
+        group_s = slice_g*group_len
+        x_grouped = x_reshape[:, group_s:group_s+group_len]        # (N*H*W, group)
+        # print(x_grouped.shape)
+        # print(gamma[0,0:3,0,0].shape)
+        # print(x_grouped.shape, gamma[group_s:group_s+group_len].shape, beta[group_s:group_s+group_len].shape)
+        ln_out, temp_cache = layernorm_forward(x_grouped, gamma[0,group_s:group_s+group_len,0,0], beta[0,group_s:group_s+group_len,0,0], gn_param)
+        # print(ln_out.shape)
+        out[:,group_s:group_s+group_len,:,:] = ln_out.reshape(N,H,W,group_len).transpose(0,3,1,2)
+        cache['layernorm'].append(temp_cache)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -868,7 +889,21 @@ def spatial_groupnorm_backward(dout, cache):
     # TODO: Implement the backward pass for spatial group normalization.      #
     # This will be extremely similar to the layer norm implementation.        #
     ###########################################################################
-    pass
+    N, C, H, W = dout.shape
+    dx = np.zeros_like(dout)                                         # 创建与dout同维度的零矩阵
+    dgamma = np.zeros((1,C,1,1))
+    dbeta = np.zeros((1,C,1,1))
+    G, ln_cache_list = cache['G'], cache['layernorm']
+    group_len = C // G
+    dout_reshape = dout.transpose(0,2,3,1).reshape(-1, C)            # 坐标轴变为(N,H,W,C)方便reshape
+
+    for slice_g in range(G):
+        group_s = slice_g*group_len
+        # 每次处理C维度中的部分维度，加H与W的全部维度
+        dout_grouped = dout_reshape[:, group_s:group_s+group_len]        # (N*H*W, group)
+        dx_reshape, dgamma[0,group_s:group_s+group_len,0,0], dbeta[0,group_s:group_s+group_len,0,0] = layernorm_backward(dout_grouped, ln_cache_list[slice_g])
+        # print(ln_out.shape)
+        dx[:,group_s:group_s+group_len,:,:] = dx_reshape.reshape(N,H,W,group_len).transpose(0,3,1,2)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
