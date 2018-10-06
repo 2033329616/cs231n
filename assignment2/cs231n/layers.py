@@ -551,7 +551,7 @@ def conv_forward_naive(x, w, b, conv_param):
     pad = conv_param.get('pad', 0)                             # 获取padding，如果不存在则返回0
     # 如果需要进行padding操作,只对(N, C, H, W)的后两维度进行padding操作
     if pad != 0:                                                         
-        x = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), 'constant', constant_values=0)
+        x_pad = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), 'constant', constant_values=0)
     H_new = int((H + 2 * pad - HH) / stride + 1)                              # 计算卷积后的尺寸大小
     W_new = int((W + 2 * pad - WW) / stride + 1)
 
@@ -563,7 +563,7 @@ def conv_forward_naive(x, w, b, conv_param):
                 for width in range(W_new):                                    # 新feature map的宽
                     start_h = stride * height
                     start_w = stride * width 
-                    neural_prod = np.sum(x[num, :, start_h:start_h+HH, start_w:start_w+WW] * w[filter, :, :, :])
+                    neural_prod = np.sum(x_pad[num, :, start_h:start_h+HH, start_w:start_w+WW] * w[filter, :, :, :])
                     out[num,filter,height, width] = neural_prod + b[filter]   # 切记加偏置
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -589,20 +589,23 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
-    (x, w, b, conv_param) = cache
-    dx = np.zeros(x.shape)
-    dw = np.zeros(w.shape)
-    db = np.zeros(b.shape)
+    (x, w, b, conv_param) = cache                              
+    dx = np.zeros(x.shape)                                     # (N,C,H,W)
+    dw = np.zeros(w.shape)                                     # (F,C,H,W)
+    db = np.zeros(b.shape)                                     # (F, )
     N, C, H, W = x.shape                                       # 将数据的维度表示为变量
     F, C, HH, WW = w.shape
     stride = conv_param.get('stride', 1)                       # 获取步长，如果不存在则返回1
     pad = conv_param.get('pad', 0)                             # 获取padding，如果不存在则返回0
     # 如果需要进行padding操作,只对(N, C, H, W)的后两维度进行padding操作
     if pad != 0:                                                         
-        x = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), 'constant', constant_values=0)
-    H_new = int((H + 2 * pad - HH) / stride + 1)               # 计算卷积后的尺寸大小
-    W_new = int((W + 2 * pad - WW) / stride + 1)   
+        x_pad = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), 'constant', constant_values=0)
+    dx_pad = np.zeros(x_pad.shape)                            # (N,C,H',W')
+    H_new = int((H + 2 * pad- HH) / stride + 1)               # 计算卷积后的尺寸大小
+    W_new = int((W + 2 * pad- WW) / stride + 1)   
 
+    # print('H W:', H, W)
+    # print('H_new W_new', H_new, W_new)
     # dout (N,F,H,W) 维度
     # mask = np.ones(*w)                                         # 定义一个与滤波器同维度的矩阵
     for num in range(N):
@@ -612,10 +615,18 @@ def conv_backward_naive(dout, cache):
                     start_h = stride * height
                     start_w = stride * width
                     # (1,C,HH,WW)
-                    dx[num, :, start_h:start_h+HH, start_w:start_w+WW] += w[filter,:,:,:] * dout[num,filter,width,height]
-                    dw[filter,:,:,:] +=  dx[num, :, start_h:start_h+HH, start_w:start_w+WW] * dout[num,filter,width,height]
-                    db[filter] += dout[num,filter,width,height]
-
+                    # print('1',w[filter,:,:,:].shape)
+                    # # print(dout[num,filter,height,width])
+                    # print('2',(w[filter,:,:,:] * dout[num,filter,height,width]).shape)
+                    # print('3',dx[num, :, start_h:start_h+HH, start_w:start_w+WW].shape)
+                    # print('---------------')
+                    dx_pad[num, :, start_h:start_h+HH, start_w:start_w+WW] += w[filter,:,:,:] * dout[num,filter,height,width]
+                    dw[filter,:,:,:] +=  x_pad[num, :, start_h:start_h+HH, start_w:start_w+WW] * dout[num,filter,height,width]
+                    db[filter] += dout[num,filter,height,width]
+    dx = dx_pad[:,:,pad:-pad,pad:-pad]
+    # print(dx.shape)
+    # print(dw.shape)
+    # print(db.shape)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -645,7 +656,22 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # TODO: Implement the max-pooling forward pass                            #
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    pool_height, pool_width = pool_param['pool_height'], pool_param['pool_width']
+    stride = pool_param['stride']
+    H_new = int((H - pool_height) / stride + 1)                  # 计算输出的尺寸
+    W_new = int((W - pool_width) / stride + 1)
+
+    out = np.zeros((N, C, H_new, W_new))                    # 创建输出为0的矩阵
+    for height in range(H_new):
+        for width in range(W_new):
+            start_h = stride * height                       # 计算pool的起始位置
+            start_w = stride * width
+            x_masked = x[:,:,start_h:start_h+pool_height,start_w:start_w+pool_width]   # (N,C,H',W')
+            # print('1',x_masked.shape)
+            # print('2',out.shape)
+            # print('----')
+            out[:, :, height, width] = np.max(x_masked, axis=(2,3))             # 在H与W维度中找最大值
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -668,7 +694,51 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the max-pooling backward pass                           #
     ###########################################################################
-    pass
+    x, pool_param = cache
+    N, C, H, W = x.shape
+    pool_height, pool_width = pool_param['pool_height'], pool_param['pool_width']
+    stride = pool_param['stride']
+    H_new = int((H - pool_height) / stride + 1)                  # 计算输出的尺寸
+    W_new = int((W - pool_width) / stride + 1)
+
+    #----------------------------------方法一---------------------------------------
+    # dout (N,C,H',W')
+    # dx = np.zeros_like(x)                                        # 创建与x同维度的零矩阵
+    # for num in range(N):
+    #     for channel in range(C):
+    #         for height in range(H_new):
+    #             for width in range(W_new):
+    #                 start_h = stride * height                    # 计算pool的起始位置
+    #                 start_w = stride * width
+    #                 x_masked = x[num,channel,start_h:start_h+pool_height,start_w:start_w+pool_width]   # (1,1,H',W') 
+    #                 # print('1',x_masked.shape)
+    #                 # print('--------')
+    #                 # ------------------方法一---------------------
+    #                 # 使用max与where找出最大值索引
+    #                 max_value = np.max(x_masked)                # 在H与W维度中找最大值
+    #                 max_index = np.where(x==max_value)          # 找到最大值的索引
+    #                 # print(max_index)
+    #                 dx[max_index] += dout[num,channel,height,width]    # (N,C)
+
+    #                 # ------------------方法二---------------------
+    #                 # 使用argmax找到索引
+    #                 # 获取当前x区块的索引，需要叠加start_h/start_w获取x的最终索引
+    #                 # local_ind_h, local_ind_w = np.unravel_index(np.argmax(x_masked, axis=None), x_masked.shape)  
+    #                 # dx[num,channel,start_h+local_ind_h,start_w+local_ind_w] +=  dout[num,channel,height,width]            
+    
+    #---------------------------------方法二(更佳)------------------------------------
+    dx = np.zeros_like(x)
+    for height in range(H_new):
+        for width in range(W_new):
+            start_h = stride * height                                                  # 计算pool的起始位置
+            start_w = stride * width
+            x_masked = x[:,:,start_h:start_h+pool_height,start_w:start_w+pool_width]   # (N,C,H',W')
+            max_x_masked = np.max(x_masked, axis=(2,3))                                # 在H和W维度上取最大值  (N,C)
+            # 使用None来扩展维度，时 (N,C) 和 (N,C,H',W')数据可以做运算
+            max_index_mask = (x_masked == max_x_masked[:,:,None,None])                 # (N,C,H',W')
+            # print(max_index_mask.shape)
+            dx[:,:,start_h:start_h+pool_height,start_w:start_w+pool_width] += max_index_mask * dout[:,:,height,width][:,:,None,None]
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
