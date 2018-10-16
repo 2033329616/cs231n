@@ -89,8 +89,8 @@ def svm_loss_vectorized(W, X, y, reg):
   # loss = np.sum(positive_num) / X.shape[0] - 1 + 0.5*reg*np.sum(W*W)     # 计算总的损失
 
   # ---------------------------------方法二 ----------------------------------
-  # sub_result[range(y.shape[0]), y] = 0                                  # 将第i行第y_i列的元素置零
-  # positive_num = sub_result[sub_result > 0]                             # 将大于0的元素提出来
+  # sub_result[range(y.shape[0]), y] = 0                                   # 将第i行第y_i列的元素置零
+  # positive_num = sub_result[sub_result > 0]                              # 将大于0的元素提出来
   # loss = np.sum(positive_num) / X.shape[0] + 0.5*reg*np.sum(W**2)
   #############################################################################
   #                             END OF YOUR CODE                              #
@@ -109,10 +109,10 @@ def svm_loss_vectorized(W, X, y, reg):
   margin = np.zeros(sub_result.shape)             
   margin[sub_result > 0] = 1            # NxC 元素大于0表示需要梯度的地方，也包括y_i
 
-  margin[range(num_train), y] = 0
-  margin[range(num_train), y] = -np.sum(margin, axis=1)   # ？？？？？？？？？？
+  margin[range(num_train), y] = 0       # 将y_i位置置0
+  margin[range(num_train), y] = -np.sum(margin, axis=1)  # j与y_i梯度是成对出现的，该句将y_i梯度与j匹配
 
-  dW = np.dot(X.T, margin)             # DxC            
+  dW = np.dot(X.T, margin)             # DxC 可以理解为链式法则         
   dW = dW / num_train + reg*W
 
   # margin[margin>0]=1

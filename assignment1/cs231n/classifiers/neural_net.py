@@ -119,7 +119,7 @@ class TwoLayerNet(object):
     coefficient[range(N), y] += -1
 
     grads['W2'] = np.dot(hidden_out.T, coefficient) / N + reg*W2   # (H,C)  链式法则
-    grads['b2'] = np.sum(coefficient, axis=0) / N                  # (C,) coefficient / N ，偏置不要正则化
+    grads['b2'] = np.sum(coefficient, axis=0)                      # (C,) coefficient / N ，偏置不要正则化
 
     # 设隐层为h1，输出层为o1，grad_L_o1表示L对o1的导数
     grad_L_o1 = coefficient / N             # (N,C)
