@@ -252,7 +252,8 @@ def sigmoid(x):
     z[pos_mask] = np.exp(-x[pos_mask])
     z[neg_mask] = np.exp(x[neg_mask])
     top = np.ones_like(x)
-    top[neg_mask] = z[neg_mask]
+    top[neg_mask] = z[neg_mask]          # ???怎么保证数值稳定性
+
     return top / (1 + z)
 
 
@@ -283,7 +284,17 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
     # TODO: Implement the forward pass for a single timestep of an LSTM.        #
     # You may want to use the numerically stable sigmoid implementation above.  #
     #############################################################################
-    pass
+    N, H = prev_h.shape                                # (N,H)
+    activation = x.dot(Wx) + prev_h.dot(Wh) + b        # (N,4H)
+    # 将激活输出按列分为四份 i,f,o,g
+    i = sigmoid(activation[:,:H])                      # i,f,o,g四个维度都是 (N,H)
+    f = sigmoid(activation[:,H:2*H])
+    o = sigmoid(activation[:,2*H:3*H])
+    g = np.tanh(activation[:,3*H:])
+
+    next_c = f * prev_c + i * g                        # 计算当前时刻细胞单元Ct
+    next_h = o * np.tanh(next_c)                       # 计算当前时刻的状态ht
+    cache = (x, prev_h, prev_c, Wx, Wh, i , f, o, g, next_c, next_h)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -315,7 +326,33 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
     # HINT: For sigmoid and tanh you can compute local derivatives in terms of  #
     # the output value from the nonlinearity.                                   #
     #############################################################################
-    pass
+    x, prev_h, prev_c, Wx, Wh, i , f, o, g, next_c, next_h = cache
+    # dnext_h传回来的梯度
+    c_out = np.tanh(next_c)                                # 细胞单元的激活输出
+    do = dnext_h * c_out                                   # (N,H)
+    dnext_c2 = dnext_h*o*(1-c_out*c_out)                   # next_c的第二个梯度 (N,H)
+
+    # dnext_c传回来的梯度
+    dnext_c += dnext_c2                                    # 将next_c与next_h回传到next_c的梯度累加
+    di = dnext_c * g                                       # (N,H)
+    dg = dnext_c * i                                       # (N,H)
+    df = dnext_c * prev_c                                  # (N,H)
+
+    dact_i = di*i*(1-i)                                    # (N,H) 注意激活函数 
+    dact_f = df*f*(1-f)
+    dact_o = do*o*(1-o)
+    dact_g = dg*(1-g*g)
+    dactivation = np.hstack((dact_i, dact_f, dact_o, dact_g))   # (N,4H) 按列拼接
+
+    dprev_c = dnext_c * f                                       # (N,H)
+    dprev_h = dactivation.dot(Wh.T)                             # (N,H)
+
+    # 矩阵求导，activation = Wx，对x求导是上游梯度与W的转置的内积，对哪一边求导
+    # 就把与被求导向乘的矩阵取转置放到那一边，剩下一边是上游梯度!!!
+    dx = dactivation.dot(Wx.T)                                  # (N,D)
+    dWx = x.T.dot(dactivation)                                  # (D,4H)
+    dWh = prev_h.T.dot(dactivation)                             # (H,4H)
+    db = np.sum(dactivation, axis=0)                            # (4H,)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################

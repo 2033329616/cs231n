@@ -245,6 +245,7 @@ class CaptioningRNN(object):
             # print('embed2:', embed_word.shape)
             h_out, _ = rnn_step_forward(embed_word, prev_h, Wx, Wh, b)    # RNN前向传播 h: (N,H)
             scores = h_out.dot(W_vocab) + b_vocab                         # 计算分数 (N,V)
+            
             sample_word = np.argmax(scores, axis=1)                       # (N,)
             captions[:,step] = sample_word                                # 将采用的单词保存到captions中
             sample_word = sample_word.reshape(-1,1) 
