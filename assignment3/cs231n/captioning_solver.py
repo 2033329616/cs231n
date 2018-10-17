@@ -54,9 +54,9 @@ class CaptioningSolver(object):
       training-time loss and gradients, with the following inputs and outputs:
 
       Inputs:
-      - features: Array giving a minibatch of features for images, of shape (N, D
+      - features: Array giving a minibatch of features for images, of shape (N, D)
       - captions: Array of captions for those images, of shape (N, T) where
-        each element is in the range (0, V].
+        each element is in the range [0, V). 
 
       Returns:
       - loss: Scalar giving the loss
@@ -93,17 +93,17 @@ class CaptioningSolver(object):
         self.data = data
 
         # Unpack keyword arguments
-        self.update_rule = kwargs.pop('update_rule', 'sgd')
+        self.update_rule = kwargs.pop('update_rule', 'sgd')      # 取出update_rule，如果没有默认sgd
         self.optim_config = kwargs.pop('optim_config', {})
         self.lr_decay = kwargs.pop('lr_decay', 1.0)
         self.batch_size = kwargs.pop('batch_size', 100)
         self.num_epochs = kwargs.pop('num_epochs', 10)
 
         self.print_every = kwargs.pop('print_every', 10)
-        self.verbose = kwargs.pop('verbose', True)
+        self.verbose = kwargs.pop('verbose', True)               # 到该句为止kwargs已为空，参数均取出
 
         # Throw an error if there are extra keyword arguments
-        if len(kwargs) > 0:
+        if len(kwargs) > 0:                                      # kwargs已经为空
             extra = ', '.join('"%s"' % k for k in list(kwargs.keys()))
             raise ValueError('Unrecognized arguments %s' % extra)
 
@@ -111,7 +111,7 @@ class CaptioningSolver(object):
         # name with the actual function
         if not hasattr(optim, self.update_rule):
             raise ValueError('Invalid update_rule "%s"' % self.update_rule)
-        self.update_rule = getattr(optim, self.update_rule)
+        self.update_rule = getattr(optim, self.update_rule)      # 获取optim模块下的属性
 
         self._reset()
 
@@ -131,8 +131,8 @@ class CaptioningSolver(object):
 
         # Make a deep copy of the optim_config for each parameter
         self.optim_configs = {}
-        for p in self.model.params:
-            d = {k: v for k, v in self.optim_config.items()}
+        for p in self.model.params:                               # 如params['W_embed']
+            d = {k: v for k, v in self.optim_config.items()}      # 每个参数都有一套optim_config
             self.optim_configs[p] = d
 
 
@@ -152,12 +152,12 @@ class CaptioningSolver(object):
         self.loss_history.append(loss)
 
         # Perform a parameter update
-        for p, w in self.model.params.items():
-            dw = grads[p]
-            config = self.optim_configs[p]
-            next_w, next_config = self.update_rule(w, dw, config)
-            self.model.params[p] = next_w
-            self.optim_configs[p] = next_config
+        for p, w in self.model.params.items():                       # {权重名:权重矩阵}
+            dw = grads[p]                                            # 提取权重p的梯度
+            config = self.optim_configs[p]                           # 提取权重p的更新规则
+            next_w, next_config = self.update_rule(w, dw, config)    # 调用optim的方法更新参数
+            self.model.params[p] = next_w                            # 存储已更新的权重
+            self.optim_configs[p] = next_config                      # 保存更新规则中的参数更新
 
 
     def check_accuracy(self, X, y, num_samples=None, batch_size=100):
@@ -180,23 +180,23 @@ class CaptioningSolver(object):
 
         # Maybe subsample the data
         N = X.shape[0]
-        if num_samples is not None and N > num_samples:
-            mask = np.random.choice(N, num_samples)
+        if num_samples is not None and N > num_samples:       # 处于正常的采样范围
+            mask = np.random.choice(N, num_samples)           # N个数中随机采样num_samples个数
             N = num_samples
-            X = X[mask]
+            X = X[mask]                                       # 取出采样的训练数据和标签
             y = y[mask]
 
         # Compute predictions in batches
-        num_batches = N / batch_size
-        if N % batch_size != 0:
+        num_batches = N // batch_size                         
+        if N % batch_size != 0:                               # N不是batch_size整数倍，所以多迭代一次
             num_batches += 1
         y_pred = []
         for i in range(num_batches):
-            start = i * batch_size
+            start = i * batch_size                            # 每次往后移动一个batch_size的位置来读入数据
             end = (i + 1) * batch_size
             scores = self.model.loss(X[start:end])
-            y_pred.append(np.argmax(scores, axis=1))
-        y_pred = np.hstack(y_pred)
+            y_pred.append(np.argmax(scores, axis=1))          # 将每个批次的数据存入列表
+        y_pred = np.hstack(y_pred)                            # 按行叠加列表，最终y_pred的维度为(N,)
         acc = np.mean(y_pred == y)
 
         return acc
@@ -208,10 +208,10 @@ class CaptioningSolver(object):
         """
         num_train = self.data['train_captions'].shape[0]
         iterations_per_epoch = max(num_train // self.batch_size, 1)
-        num_iterations = self.num_epochs * iterations_per_epoch
+        num_iterations = self.num_epochs * iterations_per_epoch         # 总的迭代次数
 
         for t in range(num_iterations):
-            self._step()
+            self._step()                                                # 更新参数
 
             # Maybe print training loss
             if self.verbose and t % self.print_every == 0:
@@ -221,7 +221,7 @@ class CaptioningSolver(object):
             # At the end of every epoch, increment the epoch counter and decay the
             # learning rate.
             epoch_end = (t + 1) % iterations_per_epoch == 0
-            if epoch_end:
+            if epoch_end:                                               # 一个epoch结束后进行学习率衰减
                 self.epoch += 1
                 for k in self.optim_configs:
                     self.optim_configs[k]['learning_rate'] *= self.lr_decay

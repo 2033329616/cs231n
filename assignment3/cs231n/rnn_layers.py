@@ -34,7 +34,15 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     # hidden state and any values you need for the backward pass in the next_h   #
     # and cache variables respectively.                                          #
     ##############################################################################
-    pass
+    h_net = prev_h.dot(Wh) + x.dot(Wx) + b                   # 未激活的隐藏状态 get (N,H)
+    # tanh = lambda x:((1-np.exp(-2*x))/(1+np.exp(-2*x)))    # 定义tanh激活函数
+    # relu = lambda x: (1 / (1 + np.exp(-x)))
+    # # relu = lambda x: (np.exp(x)/(1+np.exp(x)))           # 该方法会出现nan !!!
+    # relu_out = relu(2*h_net)                               # (N,H)
+    # tanh_out = 2*relu_out - 1                              # tanh激活函数输出 (N,H)
+
+    next_h = np.tanh(h_net)                                  # 进行tanh激活
+    cache = (x, prev_h, Wh, Wx, next_h)                    # 为反向传播存储变量
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -63,7 +71,16 @@ def rnn_step_backward(dnext_h, cache):
     # HINT: For the tanh function, you can compute the local derivative in terms #
     # of the output value from tanh.                                             #
     ##############################################################################
-    pass
+    x, prev_h, Wh, Wx, next_h = cache 
+    # relu = lambda x: (1 / (1 + np.exp(-x)))         # 定义ReLU函数计算tanh梯度
+    # dtanh = 4*relu_out*(1-relu_out)                 # tanh激活函数的梯度 (N,H)
+    dh_net = dnext_h * (1- next_h*next_h)             # 对激活前h_net的梯度   (N,H)
+
+    db = np.sum(dh_net, axis=0)                       # 将梯度按照样本数目累加 (H, )
+    dx = dh_net.dot(Wx.T)                             # (N, D)
+    dprev_h = dh_net.dot(Wh.T)                        # (N, H)    注意加转置!!!     
+    dWx = np.dot(x.T, dh_net)                         # (D, H)
+    dWh = np.dot(prev_h.T, dh_net)                    # (H, H)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -94,7 +111,17 @@ def rnn_forward(x, h0, Wx, Wh, b):
     # input data. You should use the rnn_step_forward function that you defined  #
     # above. You can use a for loop to help compute the forward pass.            #
     ##############################################################################
-    pass
+    N, T, D = x.shape                    # (N,T,D) 序列个数，长度，每个向量维度
+    H = h0.shape[1]
+    h = np.zeros((N, T, H))              # 为h设定维度
+    cache = []                           # 指定cache为列表
+    h_input = h0                         # (N,H)
+    for step in range(T):
+        h_output, step_cache = rnn_step_forward(x[:,step,:], h_input, Wx, Wh, b)    # (N,H)
+        h[:,step,:] = h_output           # 将当前时刻状态保存 (N,D)
+        cache.append(step_cache)         # 将当前时刻的缓存变量保存，用于反向传播
+        h_input = h_output               # 将该时刻的状态保存然后送入到下个时刻
+    cache.append(D)                      # 将数据维度D添加到cache最后一个位置
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -126,7 +153,24 @@ def rnn_backward(dh, cache):
     # sequence of data. You should use the rnn_step_backward function that you   #
     # defined above. You can use a for loop to help compute the backward pass.   #
     ##############################################################################
-    pass
+    N, T, H = dh.shape                                  # 提取梯度的维度
+    D   = cache[-1]                     
+    dx  = np.zeros((N, T, D))
+    dh0 = np.zeros((N, H))
+    dWx = np.zeros((D, H))
+    dWh = np.zeros((H, H))
+    db  = np.zeros(H)
+    # 为什么dh的维度是所有的时刻T的，而不是最后一个时刻的
+    step_dprev_h = 0
+    for step in list(range(T))[::-1]:                    # 反向传播所以从后往前传播
+        dh_upstream = step_dprev_h + dh[:,step,:]        # 从后面时刻传来的step_dprev_h (N,H)               
+        step_dx, step_dprev_h, step_dWx, step_dWh, step_db = rnn_step_backward(dh_upstream, cache[step])        
+        dx[:,step,:]  = step_dx
+        dWx += step_dWx
+        dWh += step_dWh
+        db  += step_db
+    dh0 = step_dprev_h                                   # 获取h0的梯度                  
+
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -154,7 +198,10 @@ def word_embedding_forward(x, W):
     #                                                                            #
     # HINT: This can be done in one line using NumPy's array indexing.           #
     ##############################################################################
-    pass
+    # 使用x中的元素挑选权重W的列
+    out = W[x, :]                                    # (N,T,D)
+    # print(out.shape)      
+    cache = (x, W.shape)                                  # (V,D)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -171,7 +218,7 @@ def word_embedding_backward(dout, cache):
 
     Inputs:
     - dout: Upstream gradients of shape (N, T, D)
-    - cache: Values from the forward pass
+    - cache: Values from the forward pass #       x:(N,T)   W:(V,D)
 
     Returns:
     - dW: Gradient of word embedding matrix, of shape (V, D).
@@ -183,7 +230,12 @@ def word_embedding_backward(dout, cache):
     # Note that words can appear more than once in a sequence.                   #
     # HINT: Look up the function np.add.at                                       #
     ##############################################################################
-    pass
+    x, (V, D) = cache
+    dW = np.zeros((V, D))                      # 创建指定维度的dW
+    # print(dout[x].shape)
+    # 将每一个 (N,T)位置对应的索引v对应的D维数据叠加到(V,D)中第v维
+    np.add.at(dW, x, dout)                     # 每一维度的使用量
+
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -374,9 +426,9 @@ def temporal_affine_backward(dout, cache):
     N, T, D = x.shape
     M = b.shape[0]
 
-    dx = dout.reshape(N * T, M).dot(w.T).reshape(N, T, D)
-    dw = dout.reshape(N * T, M).T.dot(x.reshape(N * T, D)).T
-    db = dout.sum(axis=(0, 1))
+    dx = dout.reshape(N * T, M).dot(w.T).reshape(N, T, D)             # (N, T, D)
+    dw = dout.reshape(N * T, M).T.dot(x.reshape(N * T, D)).T          # (D, M)
+    db = dout.sum(axis=(0, 1))                                        # (M, )
 
     return dx, dw, db
 
@@ -410,17 +462,18 @@ def temporal_softmax_loss(x, y, mask, verbose=False):
 
     N, T, V = x.shape
 
-    x_flat = x.reshape(N * T, V)
-    y_flat = y.reshape(N * T)
+    x_flat = x.reshape(N * T, V)                         # reshape为(N*T, V)便于处理
+    y_flat = y.reshape(N * T)                            # 使其与x_flat的维度对应
     mask_flat = mask.reshape(N * T)
 
-    probs = np.exp(x_flat - np.max(x_flat, axis=1, keepdims=True))
-    probs /= np.sum(probs, axis=1, keepdims=True)
-    loss = -np.sum(mask_flat * np.log(probs[np.arange(N * T), y_flat])) / N
-    dx_flat = probs.copy()
+    probs = np.exp(x_flat - np.max(x_flat, axis=1, keepdims=True)) # 每行减最大值，保持数值稳定性 (N*T, V)
+    probs /= np.sum(probs, axis=1, keepdims=True)                  # 按公式只需计算标签部分，这里都计算了
+    loss = -np.sum(mask_flat * np.log(probs[np.arange(N * T), y_flat])) / N   # 只取标签y_i对应的数据
+
+    dx_flat = probs.copy()                                         # (N*T, V)
     dx_flat[np.arange(N * T), y_flat] -= 1
     dx_flat /= N
-    dx_flat *= mask_flat[:, None]
+    dx_flat *= mask_flat[:, None]                                  # 添加None使维度对齐
 
     if verbose: print('dx_flat: ', dx_flat.shape)
 

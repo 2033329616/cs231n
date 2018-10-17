@@ -240,13 +240,13 @@ class Solver(object):
 
         # Compute predictions in batches
         num_batches = N // batch_size
-        if N % batch_size != 0:          # 剩下不够一个batch_siz的数据，再迭代一次
+        if N % batch_size != 0:          # 剩下不够一个batch_size的数据，再迭代一次
             num_batches += 1
         y_pred = []
         for i in range(num_batches):
             start = i * batch_size
             end = (i + 1) * batch_size
-            scores = self.model.loss(X[start:end])
+            scores = self.model.loss(X[start:end])  # numpy数据不会出现溢出现象，如果end超范围会截止
             y_pred.append(np.argmax(scores, axis=1))
         y_pred = np.hstack(y_pred)      # 将所有的预测值按行堆积
         acc = np.mean(y_pred == y)

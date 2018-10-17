@@ -36,43 +36,43 @@ class CaptioningRNN(object):
         if cell_type not in {'rnn', 'lstm'}:
             raise ValueError('Invalid cell_type "%s"' % cell_type)
 
-        self.cell_type = cell_type
+        self.cell_type = cell_type                                   # 获取输入参数
         self.dtype = dtype
         self.word_to_idx = word_to_idx
-        self.idx_to_word = {i: w for w, i in word_to_idx.items()}
+        self.idx_to_word = {i: w for w, i in word_to_idx.items()}    # 序号到单词的字典
         self.params = {}
 
-        vocab_size = len(word_to_idx)
+        vocab_size = len(word_to_idx)                                # 获取字典大小
 
-        self._null = word_to_idx['<NULL>']
+        self._null = word_to_idx['<NULL>']                           # 表示字典中的特殊token值
         self._start = word_to_idx.get('<START>', None)
         self._end = word_to_idx.get('<END>', None)
 
         # Initialize word vectors
-        self.params['W_embed'] = np.random.randn(vocab_size, wordvec_dim)
+        self.params['W_embed'] = np.random.randn(vocab_size, wordvec_dim)  # (V,W)
         self.params['W_embed'] /= 100
 
-        # Initialize CNN -> hidden state projection parameters
-        self.params['W_proj'] = np.random.randn(input_dim, hidden_dim)
-        self.params['W_proj'] /= np.sqrt(input_dim)
-        self.params['b_proj'] = np.zeros(hidden_dim)
+        # Initialize CNN -> hidden state projection parameters 将图像维度转换为h0的维度
+        self.params['W_proj'] = np.random.randn(input_dim, hidden_dim)     # (D,H)
+        self.params['W_proj'] /= np.sqrt(input_dim)                        # 消除方差的差异
+        self.params['b_proj'] = np.zeros(hidden_dim)                       # 偏置全初始为0
 
         # Initialize parameters for the RNN
         dim_mul = {'lstm': 4, 'rnn': 1}[cell_type]
-        self.params['Wx'] = np.random.randn(wordvec_dim, dim_mul * hidden_dim)
+        self.params['Wx'] = np.random.randn(wordvec_dim, dim_mul * hidden_dim)  # (W, dim_mul*H)
         self.params['Wx'] /= np.sqrt(wordvec_dim)
-        self.params['Wh'] = np.random.randn(hidden_dim, dim_mul * hidden_dim)
+        self.params['Wh'] = np.random.randn(hidden_dim, dim_mul * hidden_dim)   # (H, dim_mul*H)
         self.params['Wh'] /= np.sqrt(hidden_dim)
         self.params['b'] = np.zeros(dim_mul * hidden_dim)
 
         # Initialize output to vocab weights
-        self.params['W_vocab'] = np.random.randn(hidden_dim, vocab_size)
+        self.params['W_vocab'] = np.random.randn(hidden_dim, vocab_size)        # (H,V)
         self.params['W_vocab'] /= np.sqrt(hidden_dim)
         self.params['b_vocab'] = np.zeros(vocab_size)
 
         # Cast parameters to correct dtype
         for k, v in self.params.items():
-            self.params[k] = v.astype(self.dtype)
+            self.params[k] = v.astype(self.dtype)                               # 规范参数类型
 
 
     def loss(self, features, captions):
@@ -96,11 +96,18 @@ class CaptioningRNN(object):
         # by one relative to each other because the RNN should produce word (t+1)
         # after receiving word t. The first element of captions_in will be the START
         # token, and the first element of captions_out will be the first word.
-        captions_in = captions[:, :-1]
-        captions_out = captions[:, 1:]
-
+        captions_in = captions[:, :-1]                   # 除去最后一个单词 (N, T-1) ??与上述描述不对应
+        captions_out = captions[:, 1:]                   # 除去第一个单词   (N, T-1)
+        # print('---------------')
+        # list_str1 = [self.idx_to_word[i] for i in captions[0]]
+        # print('[total]:', ' '.join(list_str1))
+        # list_str2 = [self.idx_to_word[i] for i in captions_in[0]]
+        # print('[input]:', ' '.join(list_str2))
+        # list_str3 = [self.idx_to_word[i] for i in captions_out[0]]
+        # print('[output]:', ' '.join(list_str3))
+        # print('---------------')
         # You'll need this
-        mask = (captions_out != self._null)
+        mask = (captions_out != self._null)              # 获取标志位表示非'<NULL>' (N, T-1)
 
         # Weight and bias for the affine transform from image features to initial
         # hidden state
@@ -140,7 +147,29 @@ class CaptioningRNN(object):
         # Note also that you are allowed to make use of functions from layers.py   #
         # in your implementation, if needed.                                       #
         ############################################################################
-        pass
+        # ------------------(1) 计算损失--------------------------
+        # 1.将视觉特征向量转换为RNN的h0状态
+        h0_state = features.dot(W_proj) + b_proj   # (N, H)
+        # 2.将单词进行嵌入，增加W维度，训练模型时<START> <END>已经在captions变量里了!!!
+        # 所有这里 captions_in/captions_out 变为T-1维度
+        embed_out, embed_cache = word_embedding_forward(captions_in, W_embed) # (N, T-1) => (N,T-1,W)
+        # 3.RNN按时间进行前向传播
+        rnn_out, rnn_cache = rnn_forward(embed_out, h0_state, Wx, Wh, b)      # (N,T-1,H)
+        # 4.计算每个时刻的输出分数
+        affine_out, affine_cache = temporal_affine_forward(rnn_out, W_vocab, b_vocab) # (N,T-1,V)
+        # 5.计算每个时刻的损失 梯度：(N, T-1, V) 损失：一个值
+        loss, softmax_grad = temporal_softmax_loss(affine_out, captions_out, mask, verbose=False)     # 一个值
+       
+        # --------------------(2) 计算梯度---------------------------
+        # 4.计算分数的梯度 回传的梯度：(N,T-1,V) => (N,T-1,H)
+        grad_upstream, grads['W_vocab'], grads['b_vocab'] = temporal_affine_backward(softmax_grad, affine_cache)        
+        # 3.计算RNN的反向传播 回传的梯度：(N,T-1,H) => (N,T-1,W)
+        grad_upstream, dh0, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(grad_upstream, rnn_cache)       
+        # 2.计算词嵌入的梯度 嵌入矩阵梯度：(N,T-1,W) => (V,W)
+        grads['W_embed'] = word_embedding_backward(grad_upstream, embed_cache)
+        # 1.计算视觉特征的转换矩阵的梯度 dh0: (N,H)
+        grads['W_proj'] = features.T.dot(dh0)                # (D,H)
+        grads['b_proj'] = np.sum(dh0, axis=0)                # (H,)
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -164,7 +193,8 @@ class CaptioningRNN(object):
         the initial cell state should be zero.
 
         Inputs:
-        - features: Array of input image features of shape (N, D).
+        - features: Array of input image features of
+         shape (N, D).
         - max_length: Maximum length T of generated captions.
 
         Returns:
@@ -205,7 +235,21 @@ class CaptioningRNN(object):
         # NOTE: we are still working over minibatches in this function. Also if   #
         # you are using an LSTM, initialize the first cell state to zeros.        #
         ###########################################################################
-        pass
+        h0_state = features.dot(W_proj) + b_proj                   # 通过视觉特征得到h0状态 (N,H)
+        prev_h = h0_state                                          # 首先将h0状态送到rnn中 
+        sample_word = np.ones((N,1), dtype=np.int32)*self._start   # 将<START>作为第一个单词输入 (N,1) 
+        for step in range(max_length):
+            embed_word, _ = word_embedding_forward(sample_word, W_embed)  # 进行词嵌入(N,1,W)
+            # print('embed1:', embed_word.shape)
+            embed_word = embed_word.squeeze()                             # (N,W)
+            # print('embed2:', embed_word.shape)
+            h_out, _ = rnn_step_forward(embed_word, prev_h, Wx, Wh, b)    # RNN前向传播 h: (N,H)
+            scores = h_out.dot(W_vocab) + b_vocab                         # 计算分数 (N,V)
+            sample_word = np.argmax(scores, axis=1)                       # (N,)
+            captions[:,step] = sample_word                                # 将采用的单词保存到captions中
+            sample_word = sample_word.reshape(-1,1) 
+            prev_h = h_out                                                # 将当前的状态送入下个时刻
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
