@@ -160,8 +160,8 @@ def rnn_backward(dh, cache):
     dWx = np.zeros((D, H))
     dWh = np.zeros((H, H))
     db  = np.zeros(H)
-    # 为什么dh的维度是所有的时刻T的，而不是最后一个时刻的
-    step_dprev_h = 0
+    # 每一个时刻通过h计算分数，这里的dh是从分数传回来的
+    step_dprev_h = np.zeros((N, H))
     for step in list(range(T))[::-1]:                    # 反向传播所以从后往前传播
         dh_upstream = step_dprev_h + dh[:,step,:]        # 从后面时刻传来的step_dprev_h (N,H)               
         step_dx, step_dprev_h, step_dWx, step_dWh, step_db = rnn_step_backward(dh_upstream, cache[step])        
@@ -372,7 +372,7 @@ def lstm_forward(x, h0, Wx, Wh, b):
     an internal variable to the LSTM and is not accessed from outside.
 
     Inputs:
-    - x: Input data of shape (N, T, D)
+    - x: Input data of shape (N, T, D)        注意D是经过词嵌入后的维度
     - h0: Initial hidden state of shape (N, H)
     - Wx: Weights for input-to-hidden connections, of shape (D, 4H)
     - Wh: Weights for hidden-to-hidden connections, of shape (H, 4H)
@@ -387,7 +387,20 @@ def lstm_forward(x, h0, Wx, Wh, b):
     # TODO: Implement the forward pass for an LSTM over an entire timeseries.   #
     # You should use the lstm_step_forward function that you just defined.      #
     #############################################################################
-    pass
+    N, T, D = x.shape                                    # 获取序列长度T
+    H = h0.shape[1]
+    prev_h = h0
+    prev_c = np.zeros_like(h0)                           # 初始化细胞状态C0为0 (N,H)
+    h = np.zeros((N,T,H))                                # 创建隐藏状态向量 (N,T,H)
+    cache = []                                           # 定义空列表来存储每个时刻前向传播的cache
+    for step in range(T):
+        # next_h, next_c的维度都是 (N,H)
+        next_h, next_c, step_cache = lstm_step_forward(x[:,step,:], prev_h, prev_c, Wx, Wh, b)
+        h[:,step,:] = next_h                             # 存储隐藏状态向量
+        cache.append(step_cache)                         # 存储cache值
+        prev_h = next_h                                  # 将该时刻的状态送入下个时刻 (N,H)
+        prev_c = next_c                                  # (N,H)
+    cache.append(D)                                      # 加入嵌入维度，用于反向传播 长度为:T+1
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -400,7 +413,7 @@ def lstm_backward(dh, cache):
     Backward pass for an LSTM over an entire sequence of data.]
 
     Inputs:
-    - dh: Upstream gradients of hidden states, of shape (N, T, H)
+    - dh: Upstream gradients of hidden states, of shape (N, T, H) 这是当前时刻从分数传回来的dh梯度
     - cache: Values from the forward pass
 
     Returns a tuple of:
@@ -415,7 +428,29 @@ def lstm_backward(dh, cache):
     # TODO: Implement the backward pass for an LSTM over an entire timeseries.  #
     # You should use the lstm_step_backward function that you just defined.     #
     #############################################################################
-    pass
+    N, T, H = dh.shape
+    D = cache[-1]                                     # 获取词嵌入维度D
+    dx  = np.zeros((N,T,D))                           # 初始化固定维度的零向量
+    dh0 = np.zeros((N,H))
+    dWx = np.zeros((D,4*H))
+    dWh = np.zeros((H,4*H))
+    db  = np.zeros(4*H)
+
+    dnext_c = np.zeros((N,H))                         # 没有外界向细胞单元传入梯度，所以为0
+    dlstm_next_h = np.zeros((N,H))                    # 最后时刻的h只有从分数来的梯度
+    # 注意：细胞状态梯度只有上一时刻LSTM回传的梯度；但隐藏状态包含分数回传及上一时刻LSTM单元回传的梯度
+    # 在最后一个时刻没有从后面传来的梯度，所以dnext_c，dprev_next_h都设为0
+    for step in list(range(T))[::-1]:
+        dnext_h = dh[:,step,:] + dlstm_next_h         # 分数+后一时刻lstm单元回传梯度
+        step_dx, step_dprev_h, step_dprev_c, step_dWx, step_dWh, step_db = lstm_step_backward(dnext_h, dnext_c, cache[step])
+        dx[:,step,:] = step_dx                        # (N,D)
+        dWx += step_dWx                               # (D,4H)
+        dWh += step_dWh                               # (H,4H)
+        db  += step_db                                # (4H,)
+
+        dlstm_next_h = step_dprev_h                   # (N,H) 更新对隐藏单元h的梯度
+        dnext_c = step_dprev_c                        # (N,H) 更新对细胞单元的梯度
+    dh0 = step_dprev_h 
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################

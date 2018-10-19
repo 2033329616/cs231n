@@ -154,7 +154,10 @@ class CaptioningRNN(object):
         # 所有这里 captions_in/captions_out 变为T-1维度
         embed_out, embed_cache = word_embedding_forward(captions_in, W_embed) # (N, T-1) => (N,T-1,W)
         # 3.RNN按时间进行前向传播
-        rnn_out, rnn_cache = rnn_forward(embed_out, h0_state, Wx, Wh, b)      # (N,T-1,H)
+        if self.cell_type == 'rnn':
+            rnn_out, rnn_cache = rnn_forward(embed_out, h0_state, Wx, Wh, b)      # (N,T-1,H)
+        elif self.cell_type == 'lstm':
+            rnn_out, rnn_cache = lstm_forward(embed_out, h0_state, Wx, Wh, b)
         # 4.计算每个时刻的输出分数
         affine_out, affine_cache = temporal_affine_forward(rnn_out, W_vocab, b_vocab) # (N,T-1,V)
         # 5.计算每个时刻的损失 梯度：(N, T-1, V) 损失：一个值
@@ -164,7 +167,10 @@ class CaptioningRNN(object):
         # 4.计算分数的梯度 回传的梯度：(N,T-1,V) => (N,T-1,H)
         grad_upstream, grads['W_vocab'], grads['b_vocab'] = temporal_affine_backward(softmax_grad, affine_cache)        
         # 3.计算RNN的反向传播 回传的梯度：(N,T-1,H) => (N,T-1,W)
-        grad_upstream, dh0, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(grad_upstream, rnn_cache)       
+        if self.cell_type == 'rnn':
+            grad_upstream, dh0, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(grad_upstream, rnn_cache)       
+        elif self.cell_type == 'lstm':
+            grad_upstream, dh0, grads['Wx'], grads['Wh'], grads['b'] = lstm_backward(grad_upstream, rnn_cache)
         # 2.计算词嵌入的梯度 嵌入矩阵梯度：(N,T-1,W) => (V,W)
         grads['W_embed'] = word_embedding_backward(grad_upstream, embed_cache)
         # 1.计算视觉特征的转换矩阵的梯度 dh0: (N,H)
@@ -236,20 +242,28 @@ class CaptioningRNN(object):
         # you are using an LSTM, initialize the first cell state to zeros.        #
         ###########################################################################
         h0_state = features.dot(W_proj) + b_proj                   # 通过视觉特征得到h0状态 (N,H)
-        prev_h = h0_state                                          # 首先将h0状态送到rnn中 
+        prev_h = h0_state                                          # 首先将h0状态送到rnn中
+        if self.cell_type == 'lstm':
+            prev_c = np.zeros_like(prev_h)                         # 初始化细胞状态为0 (N,H) 
         sample_word = np.ones((N,1), dtype=np.int32)*self._start   # 将<START>作为第一个单词输入 (N,1) 
         for step in range(max_length):
             embed_word, _ = word_embedding_forward(sample_word, W_embed)  # 进行词嵌入(N,1,W)
             # print('embed1:', embed_word.shape)
             embed_word = embed_word.squeeze()                             # (N,W)
             # print('embed2:', embed_word.shape)
-            h_out, _ = rnn_step_forward(embed_word, prev_h, Wx, Wh, b)    # RNN前向传播 h: (N,H)
+            if self.cell_type == 'rnn':
+                h_out, _ = rnn_step_forward(embed_word, prev_h, Wx, Wh, b)    # RNN前向传播 h: (N,H)
+            elif self.cell_type == 'lstm':
+                h_out, c_out, _ = lstm_step_forward(embed_word, prev_h, prev_c, Wx, Wh, b)
             scores = h_out.dot(W_vocab) + b_vocab                         # 计算分数 (N,V)
             
             sample_word = np.argmax(scores, axis=1)                       # (N,)
             captions[:,step] = sample_word                                # 将采用的单词保存到captions中
             sample_word = sample_word.reshape(-1,1) 
+            
             prev_h = h_out                                                # 将当前的状态送入下个时刻
+            if self.cell_type == 'lstm':
+                prev_c = c_out
 
         ############################################################################
         #                             END OF YOUR CODE                             #
