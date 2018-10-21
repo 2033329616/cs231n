@@ -246,13 +246,18 @@ def sigmoid(x):
     """
     A numerically stable version of the logistic sigmoid function.
     """
+    # y=1/(1+exp(-x)) 当x<0时，可能使exp(-x)溢出，所以数值稳定性的方法时将其形式改变
+    # 上下同乘exp(x)得 y = exp(x) / (1+exp(x)) 在x<0时不会溢出；x>0时原来的形式就行
+    # y = exp(x) / (1+exp(x))    if x <  0
+    # y=1/(1+exp(-x))            if X >= 0
+
     pos_mask = (x >= 0)
     neg_mask = (x < 0)
     z = np.zeros_like(x)
-    z[pos_mask] = np.exp(-x[pos_mask])
-    z[neg_mask] = np.exp(x[neg_mask])
-    top = np.ones_like(x)
-    top[neg_mask] = z[neg_mask]          # ???怎么保证数值稳定性
+    z[pos_mask] = np.exp(-x[pos_mask])     # x>0 对应exp(-x)
+    z[neg_mask] = np.exp(x[neg_mask])      # x<0 对应exp(x)
+    top = np.ones_like(x)                  # x>0 分子为 1
+    top[neg_mask] = z[neg_mask]            # x<0 分子为exp(x)
 
     return top / (1 + z)
 
