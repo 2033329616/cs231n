@@ -42,7 +42,7 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     # tanh_out = 2*relu_out - 1                              # tanh激活函数输出 (N,H)
 
     next_h = np.tanh(h_net)                                  # 进行tanh激活
-    cache = (x, prev_h, Wh, Wx, next_h)                    # 为反向传播存储变量
+    cache = (x, prev_h, Wh, Wx, next_h)                      # 为反向传播存储变量
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -199,7 +199,7 @@ def word_embedding_forward(x, W):
     # HINT: This can be done in one line using NumPy's array indexing.           #
     ##############################################################################
     # 使用x中的元素挑选权重W的列
-    out = W[x, :]                                    # (N,T,D)
+    out = W[x, :]                                         # (N,T,D)
     # print(out.shape)      
     cache = (x, W.shape)                                  # (V,D)
     ##############################################################################
