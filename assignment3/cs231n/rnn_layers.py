@@ -118,7 +118,7 @@ def rnn_forward(x, h0, Wx, Wh, b):
     h_input = h0                         # (N,H)
     for step in range(T):
         h_output, step_cache = rnn_step_forward(x[:,step,:], h_input, Wx, Wh, b)    # (N,H)
-        h[:,step,:] = h_output           # 将当前时刻状态保存 (N,D)
+        h[:,step,:] = h_output           # 将当前时刻状态保存 (N,H)
         cache.append(step_cache)         # 将当前时刻的缓存变量保存，用于反向传播
         h_input = h_output               # 将该时刻的状态保存然后送入到下个时刻
     cache.append(D)                      # 将数据维度D添加到cache最后一个位置
